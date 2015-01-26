@@ -34,14 +34,16 @@ func main() {
 		defer conn.Close()
 		g := Gamepad{}
 		gs := Gamestate{}
+		velocity := 0.0
 		go func() {
-			for _ = range time.Tick(100 * time.Millisecond) {
+			for _ = range time.Tick(16 * time.Millisecond) {
 				if g.Left == 1 {
-					gs.Left++
+					velocity -= 0.2
 				}
 				if g.Right == 1 {
-					gs.Left--
+					velocity += 0.2
 				}
+				gs.Left = gs.Left + velocity
 				log.Printf("gs: %+v", gs)
 				w, err := conn.NextWriter(websocket.TextMessage)
 				if err != nil {
@@ -81,7 +83,7 @@ func main() {
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<!DOCTYPE html>
-<h1 id="ohhai">oh hai</h1>
+<h1 id="ohhai" style="display: inline; position: absolute">oh hai</h1>
 <script>
 var ws = new WebSocket('ws://localhost:8080/ws')
 // a dumb controller model
@@ -94,8 +96,7 @@ ws.onopen = function() {
   ws.onmessage = function(e) {
     try {
       m = JSON.parse(e.data)
-      ohhai.style.position = 'absolute'
-      ohhai.style.left = m.left + 'px'
+      ohhai.style.transform = 'translateX('  + m.left + 'px) rotate(' + m.left + 'deg)'
     } catch (err) {}
   }
   document.addEventListener('keyup', function(e) {
