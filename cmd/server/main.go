@@ -16,6 +16,10 @@ type Gamepad struct {
 	Right int64 `json:"right"`
 }
 
+type Gamestate struct {
+	Left float64 `json:"left"`
+}
+
 func main() {
 	wsu := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -29,13 +33,21 @@ func main() {
 		}
 		defer conn.Close()
 		g := Gamepad{}
+		gs := Gamestate{}
 		go func() {
 			for _ = range time.Tick(100 * time.Millisecond) {
+				if g.Left == 1 {
+					gs.Left++
+				}
+				if g.Right == 1 {
+					gs.Left--
+				}
+				log.Printf("gs: %+v", gs)
 				w, err := conn.NextWriter(websocket.TextMessage)
 				if err != nil {
 					log.Fatal(err)
 				}
-				b, err := json.Marshal(g)
+				b, err := json.Marshal(gs)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -83,7 +95,7 @@ ws.onopen = function() {
     try {
       m = JSON.parse(e.data)
       ohhai.style.position = 'absolute'
-      ohhai.style.left = (100 * m.left) + (-25 * m.right) + 'px'
+      ohhai.style.left = m.left + 'px'
     } catch (err) {}
   }
   document.addEventListener('keyup', function(e) {
