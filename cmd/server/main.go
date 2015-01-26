@@ -46,7 +46,7 @@ func main() {
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<!DOCTYPE html>
-<h1>check ur console</h1>
+<h1 id="ohhai">oh hai</h1>
 <script>
 var ws = new WebSocket('ws://localhost:8080/ws')
 // a dumb controller model
@@ -54,9 +54,14 @@ var c = {
   left: 0.0,
   right: 0.0 
 }
+var ohhai = document.getElementById('ohhai')
 ws.onopen = function() {
   ws.onmessage = function(e) {
-    console.log(e.data)
+    try {
+      m = JSON.parse(e.data)
+      ohhai.style.position = 'absolute'
+      ohhai.style.left = (100 * m.left) + (-25 * m.right) + 'px'
+    } catch (err) {}
   }
   document.addEventListener('keyup', function(e) {
     switch(e.keyCode) {
