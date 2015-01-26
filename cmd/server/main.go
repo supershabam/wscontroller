@@ -1,12 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"time"
 )
+
+type Gamepad struct {
+	Left  int64 `json:"left"`
+	Right int64 `json:"right"`
+}
 
 func main() {
 	wsu := websocket.Upgrader{
@@ -20,6 +28,25 @@ func main() {
 			log.Fatal(err)
 		}
 		defer conn.Close()
+		g := Gamepad{}
+		go func() {
+			for _ = range time.Tick(100 * time.Millisecond) {
+				w, err := conn.NextWriter(websocket.TextMessage)
+				if err != nil {
+					log.Fatal(err)
+				}
+				b, err := json.Marshal(g)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if _, err := w.Write(b); err != nil {
+					log.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					log.Fatal(err)
+				}
+			}
+		}()
 		for {
 			t, r, err := conn.NextReader()
 			if err != nil {
@@ -31,17 +58,13 @@ func main() {
 			if t != websocket.TextMessage {
 				continue
 			}
-			w, err := conn.NextWriter(websocket.TextMessage)
+			b, err := ioutil.ReadAll(r)
 			if err != nil {
 				log.Fatal(err)
 			}
-			if _, err := io.Copy(w, r); err != nil {
+			if err := json.Unmarshal(b, &g); err != nil {
 				log.Fatal(err)
 			}
-			if err := w.Close(); err != nil {
-				log.Fatal(err)
-			}
-
 		}
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
