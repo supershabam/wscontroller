@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"flag"
 	"github.com/gorilla/websocket"
+	"github.com/supershabam/gamepad"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -30,6 +32,31 @@ func genBike() Bike {
 	return bike
 }
 
+func eventChan(in <-chan []byte) <-chan gamepad.Event {
+	out := make(chan gamepad.Event)
+	go func() {
+		defer close(out)
+		for b := range in {
+			log.Printf("parsing: %s", b)
+			m := map[string]interface{}{}
+			err := json.Unmarshal(b, &m)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			if t, ok := m["type"].(string); ok {
+				switch t {
+				case "up":
+					if v, ok := m["value"].(bool); ok {
+						out <- gamepad.UpDPadEvent{v}
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
 func main() {
 	flag.Parse()
 	upgrader := websocket.Upgrader{
@@ -38,42 +65,51 @@ func main() {
 		},
 	}
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(*assets))))
-	http.HandleFunc("/lightbike.ws", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/controller.ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer conn.Close()
+
+		bc := make(chan []byte)
+		gp := gamepad.NewGamepad(eventChan(bc))
+
+		done := make(chan struct{})
+		btnc := make(chan gamepad.Event, 1)
+		gp.Notify(btnc, gamepad.DPadUp)
 		go func() {
-			for _ = range time.Tick(100 * time.Millisecond) {
-				bike := genBike()
-				w, err := conn.NextWriter(websocket.TextMessage)
+			for {
+				t, r, err := conn.NextReader()
 				if err != nil {
-					log.Print(err)
-					return
+					if err == io.EOF {
+						close(done)
+						return
+					}
+					log.Fatal(err)
 				}
-				b, err := json.Marshal(bike)
-				if err != nil {
-					log.Print(err)
-					return
-				}
-				if _, err := w.Write(b); err != nil {
-					log.Print(err)
-					return
-				}
-				if err := w.Close(); err != nil {
-					log.Print(err)
-					return
+				if t == websocket.TextMessage {
+					b, err := ioutil.ReadAll(r)
+					if err != nil {
+						log.Print(err)
+						continue
+					}
+					bc <- b
 				}
 			}
 		}()
+
 		for {
-			_, _, err := conn.NextReader()
-			if err != nil {
-				if err == io.EOF {
-					return
+			select {
+			case <-done:
+				return
+			case b := <-btnc:
+				if b.Bool() == false {
+					log.Printf("let off up!")
+					close(done)
 				}
-				log.Fatal(err)
+			case <-time.Tick(time.Second):
+				log.Printf("%+v", gp.State())
 			}
 		}
 	})
