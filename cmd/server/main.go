@@ -2,145 +2,80 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"flag"
 	"github.com/gorilla/websocket"
 	"io"
-	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 )
 
-type Gamepad struct {
-	Left  int64 `json:"left"`
-	Right int64 `json:"right"`
+var (
+	assets = flag.String("assets", "./assets", "assets directory")
+)
+
+type Bike struct {
+	Color string  `json:"color"`
+	Path  []int64 `json:"path"`
 }
 
-type Gamestate struct {
-	Left float64 `json:"left"`
+func genBike() Bike {
+	pathc := rand.Intn(300)
+	bike := Bike{Color: "green", Path: []int64{}}
+	for count := 0; count < pathc; count++ {
+		point := rand.Int63n(1000)
+		bike.Path = append(bike.Path, point)
+	}
+	return bike
 }
 
 func main() {
-	wsu := websocket.Upgrader{
+	flag.Parse()
+	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
 	}
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := wsu.Upgrade(w, r, nil)
+	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(*assets))))
+	http.HandleFunc("/lightbike.ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer conn.Close()
-		g := Gamepad{}
-		gs := Gamestate{}
-		velocity := 0.0
 		go func() {
-			for _ = range time.Tick(16 * time.Millisecond) {
-				if g.Left == 1 {
-					velocity -= 0.2
-				}
-				if g.Right == 1 {
-					velocity += 0.2
-				}
-				gs.Left = gs.Left + velocity
-				log.Printf("gs: %+v", gs)
+			for _ = range time.Tick(100 * time.Millisecond) {
+				bike := genBike()
 				w, err := conn.NextWriter(websocket.TextMessage)
 				if err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					return
 				}
-				b, err := json.Marshal(gs)
+				b, err := json.Marshal(bike)
 				if err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					return
 				}
 				if _, err := w.Write(b); err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					return
 				}
 				if err := w.Close(); err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					return
 				}
 			}
 		}()
 		for {
-			t, r, err := conn.NextReader()
+			_, _, err := conn.NextReader()
 			if err != nil {
 				if err == io.EOF {
 					return
 				}
 				log.Fatal(err)
 			}
-			if t != websocket.TextMessage {
-				continue
-			}
-			b, err := ioutil.ReadAll(r)
-			if err != nil {
-				log.Fatal(err)
-			}
-			if err := json.Unmarshal(b, &g); err != nil {
-				log.Fatal(err)
-			}
 		}
-	})
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `<!DOCTYPE html>
-<h1 id="ohhai" style="display: inline; position: absolute">oh hai</h1>
-<script>
-var ws = new WebSocket('ws://localhost:8080/ws')
-// a dumb controller model
-var c = {
-  left: 0.0,
-  right: 0.0 
-}
-var ohhai = document.getElementById('ohhai')
-ws.onopen = function() {
-  ws.onmessage = function(e) {
-    try {
-      m = JSON.parse(e.data)
-      ohhai.style.transform = 'translateX('  + m.left + 'px) rotate(' + m.left + 'deg)'
-    } catch (err) {}
-  }
-  document.addEventListener('keyup', function(e) {
-    switch(e.keyCode) {
-    case 65:
-      if (c.left == 0) {
-        return
-      }
-      c.left = 0
-      break
-    case 68:
-      if (c.right == 0) {
-        return
-      }
-      c.right = 0
-      break
-    default:
-      return
-    }
-    ws.send(JSON.stringify(c))
-  })
-  document.addEventListener('keydown', function(e) {
-    switch(e.keyCode) {
-    case 65:
-      if (c.left == 1) {
-        return
-      }
-      c.left = 1
-      break
-    case 68:
-      if (c.right == 1) {
-        return
-      }
-      c.right = 1
-      break
-    default:
-      return
-    }
-    ws.send(JSON.stringify(c))
-  })
-  ws.send(JSON.stringify(c))
-}
-</script>
-`)
 	})
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal(err)
