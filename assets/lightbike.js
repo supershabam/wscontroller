@@ -34,7 +34,6 @@ var ctx = document.getElementById('canvas').getContext('2d')
 var ws = new WebSocket('ws://localhost:8080/lightbike.ws')
 ws.onopen = function() {
   ws.onmessage = function(e) {
-    console.log('ws', e)
     try {
       var bike = JSON.parse(e.data)
       paint(ctx, conf, bike)
@@ -42,4 +41,45 @@ ws.onopen = function() {
       console.log(err)
     }
   }
+  var c = {left: 0, right: 0}
+  document.addEventListener('keyup', function(e) {
+    switch(e.keyCode) {
+    case 65:
+      if (c.left == 0) {
+        return
+      }
+      c.left = 0
+      ws.send(JSON.stringify({button: 'left', pressed: false}))
+      break
+    case 68:
+      if (c.right == 0) {
+        return
+      }
+      c.right = 0
+      ws.send(JSON.stringify({button: 'right', pressed: false}))
+      break
+    default:
+      return
+    }
+  })
+  document.addEventListener('keydown', function(e) {
+    switch(e.keyCode) {
+    case 65:
+      if (c.left == 1) {
+        return
+      }
+      c.left = 1
+      ws.send(JSON.stringify({button: 'left', pressed: true}))
+      break
+    case 68:
+      if (c.right == 1) {
+        return
+      }
+      c.right = 1
+      ws.send(JSON.stringify({button: 'right', pressed: true}))
+      break
+    default:
+      return
+    }
+  })
 }
