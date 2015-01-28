@@ -3,10 +3,10 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/supershabam/gamepad"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -32,26 +32,57 @@ func genBike() Bike {
 	return bike
 }
 
-func eventChan(in <-chan []byte) <-chan gamepad.Event {
-	out := make(chan gamepad.Event)
+type gamepadEventJson struct {
+	Button  string `json:"button"`
+	Pressed bool   `json:"pressed"`
+}
+
+func gamepadEvent(in []byte) (e gamepad.Event, err error) {
+	gej := gamepadEventJson{}
+	err = json.Unmarshal(in, &gej)
+	if err != nil {
+		return
+	}
+	e.Pressed = gej.Pressed
+	switch gej.Button {
+	case "up":
+		e.Button = gamepad.Up
+	case "down":
+		e.Button = gamepad.Down
+	case "left":
+		e.Button = gamepad.Left
+	case "right":
+		e.Button = gamepad.Right
+	default:
+		err = fmt.Errorf("unknown button: %s", gej.Button)
+		return
+	}
+	return e, nil
+}
+
+type Gamestate struct {
+	Color string  `json:"color"`
+	Paths []int64 `json:"paths"`
+}
+
+func game(p1 *gamepad.Gamepad) <-chan Gamestate {
+	gs := Gamestate{
+		Color: "green",
+		Paths: []int64{34},
+	}
+	out := make(chan Gamestate)
 	go func() {
 		defer close(out)
-		for b := range in {
-			log.Printf("parsing: %s", b)
-			m := map[string]interface{}{}
-			err := json.Unmarshal(b, &m)
-			if err != nil {
-				log.Print(err)
-				return
-			}
-			if t, ok := m["type"].(string); ok {
-				switch t {
-				case "up":
-					if v, ok := m["value"].(bool); ok {
-						out <- gamepad.UpDPadEvent{v}
-					}
+		t := time.Tick(time.Millisecond * 16)
+		for {
+			select {
+			case <-t:
+				s := p1.State()
+				if s.Right {
+					gs.Paths = append(gs.Paths, gs.Paths[len(gs.Paths)-1]+1)
 				}
 			}
+			out <- gs
 		}
 	}()
 	return out
@@ -65,51 +96,53 @@ func main() {
 		},
 	}
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir(*assets))))
-	http.HandleFunc("/controller.ws", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/lightbike.ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer conn.Close()
-
-		bc := make(chan []byte)
-		gp := gamepad.NewGamepad(eventChan(bc))
-
 		done := make(chan struct{})
-		btnc := make(chan gamepad.Event, 1)
-		gp.Notify(btnc, gamepad.DPadUp)
+
+		defer close(done)
+		eventc := make(chan gamepad.Event)
+		defer close(eventc)
+		p1 := gamepad.NewGamepad(eventc)
 		go func() {
+			statec := game(p1)
 			for {
-				t, r, err := conn.NextReader()
-				if err != nil {
-					if err == io.EOF {
-						close(done)
-						return
-					}
-					log.Fatal(err)
-				}
-				if t == websocket.TextMessage {
-					b, err := ioutil.ReadAll(r)
+				select {
+				case <-done:
+					return
+				case s := <-statec:
+					b, err := json.Marshal(s)
 					if err != nil {
 						log.Print(err)
 						continue
 					}
-					bc <- b
+					err = conn.WriteMessage(websocket.TextMessage, b)
+					if err != nil {
+						log.Print(err)
+						continue
+					}
 				}
 			}
 		}()
-
 		for {
-			select {
-			case <-done:
-				return
-			case b := <-btnc:
-				if b.Bool() == false {
-					log.Printf("let off up!")
-					close(done)
+			t, b, err := conn.ReadMessage()
+			if err != nil {
+				if err == io.EOF {
+					return
 				}
-			case <-time.Tick(time.Second):
-				log.Printf("%+v", gp.State())
+				log.Fatal(err)
+			}
+			if t == websocket.TextMessage {
+				e, err := gamepadEvent(b)
+				if err != nil {
+					log.Print(err)
+					continue
+				}
+				eventc <- e
 			}
 		}
 	})

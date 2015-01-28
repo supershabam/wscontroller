@@ -16,7 +16,7 @@ function paintLightbikePoint(ctx, c, x, y) {
 
 function paintLightbike(ctx, c, bike) {
   ctx.fillStyle = bike.color
-  bike.path.forEach(function(point) {
+  bike.paths.forEach(function(point) {
     // top left
     var x, y
     x = (point % c.gridWidth) * c.bikeWidth
