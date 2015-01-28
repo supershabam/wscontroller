@@ -78,8 +78,11 @@ func game(p1 *gamepad.Gamepad) <-chan Gamestate {
 			select {
 			case <-t:
 				s := p1.State()
+				cur := gs.Paths[0]
 				if s.Right {
-					gs.Paths = append(gs.Paths, gs.Paths[len(gs.Paths)-1]+1)
+					gs.Paths[0] = cur + 1
+				} else if s.Left {
+					gs.Paths[0] = cur - 1
 				}
 			}
 			out <- gs

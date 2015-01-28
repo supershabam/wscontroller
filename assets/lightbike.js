@@ -41,45 +41,45 @@ ws.onopen = function() {
       console.log(err)
     }
   }
-  var c = {left: 0, right: 0}
-  document.addEventListener('keyup', function(e) {
-    switch(e.keyCode) {
-    case 65:
-      if (c.left == 0) {
-        return
-      }
-      c.left = 0
-      ws.send(JSON.stringify({button: 'left', pressed: false}))
-      break
-    case 68:
-      if (c.right == 0) {
-        return
-      }
-      c.right = 0
-      ws.send(JSON.stringify({button: 'right', pressed: false}))
-      break
-    default:
-      return
+  var state = {left: false, right: false, up: false, down: false}
+  var mappings = [
+    {
+      button: 'left',
+      code: 37
+    },
+    {
+      button: 'right',
+      code: 39
+    },
+    {
+      button: 'up',
+      code: 38
+    },
+    {
+      button: 'down',
+      code: 40
     }
-  })
-  document.addEventListener('keydown', function(e) {
-    switch(e.keyCode) {
-    case 65:
-      if (c.left == 1) {
+  ]
+  mappings.forEach(function(m) {
+    document.addEventListener('keyup', function(e) {
+      if (e.keyCode != m.code) {
         return
       }
-      c.left = 1
-      ws.send(JSON.stringify({button: 'left', pressed: true}))
-      break
-    case 68:
-      if (c.right == 1) {
+      if (state[m.button] == false) {
+	return
+      }
+      state[m.button] = false
+      ws.send(JSON.stringify({button: m.button, pressed: false}))
+    })
+    document.addEventListener('keydown', function(e) {
+      if (e.keyCode != m.code) {
         return
       }
-      c.right = 1
-      ws.send(JSON.stringify({button: 'right', pressed: true}))
-      break
-    default:
-      return
-    }
+      if (state[m.button] == true) {
+	return
+      }
+      state[m.button] = true
+      ws.send(JSON.stringify({button: m.button, pressed: true}))
+    })
   })
 }
