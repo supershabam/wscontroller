@@ -31,7 +31,11 @@ function paint(ctx, c, bike) {
 }
 
 var ctx = document.getElementById('canvas').getContext('2d')
-var ws = new WebSocket('ws://localhost:8080/lightbike.ws')
+function url(s) {
+    var l = window.location
+    return ((l.protocol === "https:") ? "wss://" : "ws://") + l.hostname + (((l.port != 80) && (l.port != 443)) ? ":" + l.port : "") + s
+}
+var ws = new WebSocket(url('/lightbike.ws'))
 ws.onopen = function() {
   ws.onmessage = function(e) {
     try {
